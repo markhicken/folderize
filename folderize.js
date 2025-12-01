@@ -100,9 +100,9 @@ async function moveFiles(_srcPath, _dstPath) {
       dstFilePath: dstFolder + file.name,
       stats: file.stats,
     };
-  });
+  }).filter(file => IGNORED_FILES.includes(file.name) === false); // filter out ignored files
 
-  files.length && log('Creating folders...');
+  files.length && log('Moving files...');
   filesForFiling.forEach((file, index) => {
     // check if folder exists
     if(!fs.existsSync(file.dstPath)) {
@@ -189,16 +189,26 @@ async function checkAndFolderize() {
 
 // --- main ---
 (async () => {
+  // Handle graceful shutdown on SIGINT (CTRL-C)
+  process.on('SIGINT', () => {
+    process.exit(0);
+  });
+
   initializeLogger();
   continuous && await log('Folderize started.');
   validatePath(srcPath, 'Source');
   validatePath(dstPath, 'Destination');
 
   if (!continuous) {
-    const shouldContinue = await new enquirer.Confirm({
-      message: `Are you sure you want to move all files from "${srcPath}" to "${dstPath}/{year}/{year-month}"?`
-    }).run();
-    if (!shouldContinue) {
+    try {
+      const shouldContinue = await new enquirer.Confirm({
+        message: `Are you sure you want to move all files from "${srcPath}" to "${dstPath}/{year}/{year-month}"?`
+      }).run();
+      if (!shouldContinue) {
+        process.exit(0);
+      }
+    } catch (error) {
+      // Handle CTRL-C or other interruptions during prompt
       process.exit(0);
     }
   }
@@ -212,12 +222,12 @@ async function checkAndFolderize() {
       await checkAndFolderize();
     }, CONTINUOUS_INTERVAL);
   } else {
-    // offer to clean up after single runs
-    const shouldCleanup = await new enquirer.Confirm({
-      message: `Would you like to remove empty folders from "${srcPath}"?`
-    }).run();
-    if (shouldCleanup) {
+    // clean up after single runs
+    try {
       cleanEmptyFoldersRecursively(srcPath);
+    } catch (error) {
+      // Handle CTRL-C or other interruptions during prompt
+      process.exit(0);
     }
   }
 })();
