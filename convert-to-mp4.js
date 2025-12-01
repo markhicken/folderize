@@ -4,6 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execFileSync, spawnSync, spawn } from 'child_process';
+import { utimesSync } from 'utimes';
 import { log } from './logger.js';
 import { VIDEO_FILE_EXTENSIONS } from './folderize.js';
 
@@ -31,7 +32,7 @@ export function getVideoCodec(filePath) {
     ], { encoding: 'utf8' }).trim();
     return result; // e.g. "hevc", "h264", "prores"
   } catch (err) {
-    log(`ffprobe failed for ${filePath}: ${err.message}`, false);
+    log(`ffprobe failed for ${filePath}: ${err.message}`, true);
     return null;
   }
 }
@@ -46,7 +47,7 @@ export function getDurationSeconds(filePath) {
     ], { encoding: 'utf8' }).trim();
     return parseFloat(result);
   } catch (err) {
-    log(`ffprobe failed to get duration for ${filePath}: ${err.message}`, false);
+    log(`ffprobe failed to get duration for ${filePath}: ${err.message}`, true);
     return null;
   }
 }
@@ -54,6 +55,14 @@ export function getDurationSeconds(filePath) {
 export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
   return new Promise((resolve, reject) => {
     const duration = getDurationSeconds(inputPath);
+    
+    // Get original file stats to restore timestamps later
+    let originalStats;
+    try {
+      originalStats = fs.statSync(inputPath);
+    } catch (err) {
+      log(`Warning: Could not get file stats for ${inputPath}: ${err.message}`, true);
+    }
     
     const args = [
       '-y',
@@ -65,6 +74,7 @@ export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
       '-preset', 'medium',      // speed vs compression
       '-c:a', 'aac',
       '-b:a', '160k',
+      '-map_metadata', '0',     // preserve all metadata from input to output
       '-movflags', '+faststart',
       '-loglevel', 'warning',   // suppress info, only show warnings/errors
       '-progress', 'pipe:1',    // output progress to stdout
@@ -113,6 +123,22 @@ export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
         // success - replace progress line with log
         process.stdout.write('\r                                        \r'); // clear the line
         log(`Conversion complete: ${path.basename(outputPath)}          `, true);
+        
+        // Restore original file timestamps to maintain organization by date
+        if (originalStats) {
+          try {
+            utimesSync(outputPath, {
+              btime: Math.floor(originalStats.birthtimeMs),
+              mtime: Math.floor(originalStats.mtimeMs),
+              atime: Math.floor(originalStats.atimeMs),
+              ctime: Math.floor(originalStats.ctimeMs)
+            });
+            log(`Restored timestamps for: ${path.basename(outputPath)}`, true);
+          } catch (err) {
+            log(`Warning: Could not restore timestamps for ${path.basename(outputPath)}: ${err.message}`, true);
+          }
+        }
+        
         if (deleteOriginal) {
           try {
             fs.unlinkSync(inputPath);

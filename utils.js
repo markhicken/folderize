@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import ExifImage from 'node-exif';
 import { log } from './logger.js';
 
 export function validatePath(pathArg, pathName, shouldCreate) {
@@ -52,3 +53,27 @@ export function cleanEmptyFoldersRecursively(folder, isSubFolder = false) {
     return;
   }
 }
+
+// gets file with extended info such as exif data
+export async function getExtendedFile(file) {
+  return new Promise((resolve, reject) => {
+    let updatedFile = {...file, exifData: null, filingDateSrc: 'file.createdAt', errorInfo: []};
+    let filingCreatedDate = updatedFile.stats.birthtime;
+    try {
+      new ExifImage({image: file.path}, function (error, exifData) {
+        if (error) {
+          updatedFile.errorInfo.push(`Error parsing EXIF data for "${file.path}". Using file date instead - ` + error.message);
+        } else {
+          const exifCreateDate = exifData.exif.CreateDate || exifData.exif.DateTimeOriginal || exifData.exif.DateTimeDigitized || exifData.image.CreateDate || exifData.image.ModifyDate;
+          updatedFile.filingCreatedDate = exifCreateDate || file.stats.birthtime;
+          updatedFile.exifData = {...exifData};
+          if (exifCreateDate) { updatedFile.filingDateSrc = `exif`; }
+        }
+        resolve({...updatedFile, filingCreatedDate});
+      });
+    } catch(error) {
+      updatedFile.errorInfo.push(`No EXIF data for "${file}". Using file created date instead - ` + error.message);
+      resolve({...updatedFile, filingCreatedDate});
+    }
+  });
+};
