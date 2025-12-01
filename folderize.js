@@ -1,100 +1,74 @@
-// see https://github.com/markhicken/folderize for more info
-
 import {globby} from 'globby';
 import ExifImage from 'node-exif';
 import enquirer from 'enquirer';
 import fs from 'fs';
 import path from 'path';
 import { utimesSync } from 'utimes';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import { convertVideoFiles, checkFfmpegInstalled } from './convert-to-mp4.js';
+import { log, initializeLogger } from './logger.js';
+import { cleanEmptyFoldersRecursively, validatePath } from './utils.js';
 
 const CONTINUOUS_INTERVAL = 1000 * 60 * 60; // minutes
-const LOG_FOLDER = './log';
-const LOG_FILE = getLogFileName();
 const IGNORED_FILES = ['.DS_Store', 'Thumbs.db'];
+export const VIDEO_FILE_EXTENSIONS = ['.mov', '.mp4', '.m4v', '.avi', '.wmv', '.flv', '.mkv', '.webm'];
 const ALLOWED_FILE_EXTENSIONS = [
   '.jpg', '.jpeg', '.gif', '.heic', '.raw', '.cr2', '.nef', // '.png', (png tends to be iPhone screenshots and garbage images)
-  '.mov', '.mp4', '.m4v', '.avi', '.wmv', '.flv', '.mkv', '.webm'
+  ...VIDEO_FILE_EXTENSIONS,
 ].map(ext => ext.toLowerCase());
 
-
-let srcPath = process.argv[2];
-let dstPath = process.argv[3];
-let continuous = process.argv[4]?.toLowerCase() === 'continuous';
-
-
-function getLogFileName() {
-  const now = new Date();
-  const timestamp = now.toISOString()
-    .replace(/[T]/g, ' ')
-    .replace(/[Z]/g, '')
-    .replace(/\..+/, '')
-    .replace(/:/g, '-');
-  return `${LOG_FOLDER}/folderize_${timestamp}.log`;
-};
-
-async function log(message, persistToFile = true) {
-  const timestamp = new Date().toISOString();
-  const logEntry = `${timestamp} - ${message}\n`;
-  console.log(message);
-  if (persistToFile) {
-    try {
-      await fs.promises.appendFile(LOG_FILE, logEntry);
-    } catch (error) {
-      console.log('error writing to log file');
+// Parse command-line arguments with yargs
+const argv = await yargs(hideBin(process.argv))
+  .positional('source', {
+    describe: 'Source path for files to folderize',
+    type: 'string'
+  })
+  .positional('destination', {
+    describe: 'Destination path for organized files',
+    type: 'string'
+  })
+  .option('continuous', {
+    describe: 'Run in continuous mode, checking for files periodically',
+    type: 'boolean',
+    default: false
+  })
+  .option('convert-videos', {
+    describe: 'Enable video conversion to MP4',
+    type: 'boolean',
+    default: false
+  })
+  .option('delete-originals', {
+    describe: 'Delete original video files after conversion',
+    type: 'boolean',
+    default: false
+  })
+  .demandCommand(2, 'You must provide source and destination paths')
+  .example('node $0 ./source ./destination', 'Move files from source to destination')
+  .example('node $0 ./source ./destination --convert-videos', 'Enable video conversion')
+  .example('node $0 ./source ./destination --convert-videos --delete-originals', 'Enable video conversion with deletion of originals')
+  .example('node $0 ./source ./destination --continuous', 'Run in continuous mode')
+  .check((argv) => {
+    // Support both positional and named arguments
+    const source = argv._[0] || argv.source;
+    const destination = argv._[1] || argv.destination;
+    
+    if (!source || !destination) {
+      throw new Error('Please provide both source and destination paths');
     }
-  }
-}
+    return true;
+  })
+  .argv;
 
-function cleanEmptyFoldersRecursively(folder, isSubFolder = false) {
-  if (!fs.statSync(folder).isDirectory()) {
-    return;
-  }
+// Support both positional and named arguments
+let srcPath = argv._[0] || argv.source;
+let dstPath = argv._[1] || argv.destination;
+let continuous = argv.continuous;
+let videoConversionEnabled = argv['convert-videos'];
+let deleteOriginals = argv['delete-originals'];
 
-  let files = fs.readdirSync(folder);
-  if (files.length > 0) {
-    files.forEach((file) => {
-      const fullPath = path.join(folder, file);
-      cleanEmptyFoldersRecursively(fullPath, true);
-    });
 
-    // re-evaluate files; after deleting subfolder
-    // we may have parent folder empty now
-    if (isSubFolder) {
-      files = fs.readdirSync(folder);
-    }
-  }
-
-  if (files.length === 0 && isSubFolder) {
-    log('Removing: ', folder);
-    fs.rmdirSync(folder);
-    return;
-  }
-}
-
-function validatePath(path, pathName, shouldCreate) {
-  if (!path) {
-    log(`Please provide a ${pathName} path`);
-    process.exit(1);
-  } else {
-    path = path[path.length-1] === '/' ? path : path + '/';
-    if (!fs.existsSync(path)) {
-      if (shouldCreate) {
-        try {
-          fs.mkdirSync(path, { recursive: true });
-        } catch (error) {
-          // this is primarily used for creating the log file path so we will
-          // use the direct console.log if it fails
-          console.log(`Cannot create folder: ${path}`);
-          process.exit(1);
-        }
-      } else {
-        log(`${pathName} path "${path}" does not exist.`);
-        process.exit(1);
-      }
-    }
-  }
-}
-
+// gets file with extended info such as exif data
 async function getExtendedFile(file) {
   return new Promise((resolve, reject) => {
     let updatedFile = {...file, exifData: null, filingDateSrc: 'file.createdAt', errorInfo: []};
@@ -196,8 +170,41 @@ async function moveFiles(_srcPath, _dstPath) {
   });
 }
 
+async function checkAndCovertVideoFiles() {
+  // Convert video files in the source folder using the imported converter.
+  if (!videoConversionEnabled) {
+    log('Video conversion plugin is disabled.', true);
+    return true;
+  }
 
+  try {
+    log('Starting video conversion step...', true);
+    checkFfmpegInstalled();
+    await convertVideoFiles(srcPath, srcPath, deleteOriginals); // convert in place, delete originals
+    log('Video conversion completed successfully.', true);
+    return true;
+  } catch (err) {
+    log(`Video conversion failed: ${err.message}`, true);
+    return false;
+  }
+}
+
+let checkCount = 0;
 async function checkAndFolderize() {
+  checkCount++;
+
+  // periodically log the source and destination paths
+  if (checkCount % 10 === 0) {
+    log(`Source Path: ${srcPath}\r\n` + `Destination Path: ${dstPath}`);
+  } 
+
+  // check and convert video files
+  const videosConverted = await checkAndCovertVideoFiles();
+  if (!videosConverted) {
+    log('Skipping file folderization due to video conversion failure.', false);
+    return;
+  }
+
   await log('Checking for files to folderize...');
   await moveFiles(srcPath, dstPath);
   if (continuous) {
@@ -205,21 +212,21 @@ async function checkAndFolderize() {
   }
 }
 
+// --- main ---
 (async () => {
-  validatePath(LOG_FOLDER, 'log', true);
+  initializeLogger();
   continuous && await log('Folderize started.');
   validatePath(srcPath, 'Source');
   validatePath(dstPath, 'Destination');
 
   if (!continuous) {
     const shouldContinue = await new enquirer.Confirm({
-      message: `Are you sure you want to move all files from "${srcPath}" to "${dstPath}{year}/{year-month}"?`
+      message: `Are you sure you want to move all files from "${srcPath}" to "${dstPath}/{year}/{year-month}"?`
     }).run();
     if (!shouldContinue) {
       process.exit(0);
     }
   }
-
 
   // handle first run
   await checkAndFolderize();

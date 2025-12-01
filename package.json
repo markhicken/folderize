@@ -1,6 +1,6 @@
 {
   "name": "folderize",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Move files into folders based on creation date (EXIF aware)",
   "main": "folderize.js",
@@ -21,6 +21,7 @@
     "enquirer": "^2.3.6",
     "globby": "^13.1.4",
     "node-exif": "^1.0.1",
-    "utimes": "^5.1.1"
+    "utimes": "^5.1.1",
+    "yargs": "^18.0.0"
   }
 }

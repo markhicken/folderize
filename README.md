@@ -1,6 +1,10 @@
 # Folderize
 
-This script moves files into folders based on creation date. It first checks for EXIF data and uses the creation date from there if available, then falls back to the file system creation date. It allows temporary system files such as .DS_Store and Thumbs.db to be overwritten. It then removes any remaining empty folders from the source folder.
+This script moves files into folders based on creation date. It is designed for photo/video organization. It performs the following...
+
+1. Converts video files to .mp4 format (disabled by default, enable with --convert-videos)
+1. Moves files into their output location by first using the exif creation date if present and falling back to the file system creation date. 
+2. Removes any remaining empty folders from the source folder.
 
 Files are moved into folders of the following format...
 
@@ -11,6 +15,30 @@ EX: `2023/2023-01`
 
 ## Usage
 
-`node folderize.js {SOURCE_FOLDER} {DESTINATION_FOLDER} continuous`
+`node folderize.js <source> <destination> [options]`
 
-"continuous" is an optional flag to keep it running on an interval
+### Options
+
+- `--continuous`: Run in continuous mode, checking for files periodically (default: false)
+- `--convert-videos`: Enable video conversion to MP4 (default: false)
+- `--delete-originals`: Delete original files after conversion (default: false)
+
+### Examples
+
+**Arguments:**
+```bash
+# Basic usage without video conversion
+node folderize.js ./source ./destination
+
+# With video conversion enabled
+node folderize.js ./source ./destination --convert-videos
+
+# With video conversion enabled and deleting original videos after conversion is complete
+node folderize.js ./source ./destination --convert-videos --delete-originals
+
+# Continuous mode
+node folderize.js ./source ./destination --continuous
+
+# Continuous mode with video conversion and deleting original videos after conversion is complete
+node folderize.js ./source ./destination --continuous --convert-videos --delete-originals
+```
