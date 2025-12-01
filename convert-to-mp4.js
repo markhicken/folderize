@@ -66,9 +66,11 @@ export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
     
     const args = [
       '-y',
+      '-analyzeduration', '5M',
+      '-probesize', '50M',
       '-i', inputPath,
       '-map', '0:v',            // map video streams only
-      '-map', '0:a?',           // map audio streams (? = optional, won't fail if none)
+      '-map', '0:a:0?',         // map first audio stream only (? = optional, won't fail if none)
       '-c:v', 'libx264',
       '-crf', '18',             // quality: 18 is usually visually lossless
       '-preset', 'medium',      // speed vs compression
@@ -228,6 +230,7 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals) {
       }
     } catch (err) {
       log(`Error processing ${name}: ${err.message}`, true);
+      throw err;
     }
   }
 }
