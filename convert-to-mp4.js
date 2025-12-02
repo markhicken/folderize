@@ -156,37 +156,20 @@ export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
   });
 }
 
-export async function convertVideoFiles(inputDir, outputDir, deleteOriginals, filesList = null, stopOnError = false) {
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+export async function convertVideoFiles(inputDir, deleteOriginals, filesList, stopOnError) {
+  if (!fs.existsSync(inputDir)) {
+    fs.mkdirSync(inputDir, { recursive: true });
   }
 
-  let videoFiles = [];
-  
-  // If filesList is provided, use it; otherwise fall back to non-recursive directory scan
-  if (filesList && Array.isArray(filesList)) {
-    videoFiles = filesList.map(file => ({
-      inPath: file.srcFilePath || file,
-      name: path.basename(file.srcFilePath || file),
-      dir: path.dirname(file.srcFilePath || file)
-    }));
-  } else {
-    // Legacy non-recursive mode for backward compatibility
-    const entries = fs.readdirSync(inputDir);
-    videoFiles = entries
-      .filter(name => {
-        const inPath = path.join(inputDir, name);
-        const stat = fs.statSync(inPath);
-        if (!stat.isFile()) return false;
-        const ext = path.extname(name).toLowerCase();
-        return VIDEO_FILE_EXTENSIONS.includes(ext) || ext === '.mov' || ext === '.mp4';
-      })
-      .map(name => ({
-        inPath: path.join(inputDir, name),
-        name: name,
-        dir: inputDir
-      }));
+  if (!filesList || !Array.isArray(filesList)) {
+    throw new Error('filesList must be an array');
   }
+
+  let videoFiles = filesList.map(file => ({
+    inPath: file.srcFilePath || file,
+    name: path.basename(file.srcFilePath || file),
+    dir: path.dirname(file.srcFilePath || file)
+  }));
 
   let fileCount = 0;
   const totalFiles = videoFiles.length;
@@ -213,13 +196,13 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals, fi
     let outPath;
     if (filesList && Array.isArray(filesList)) {
       const relativePath = path.relative(inputDir, fileDir);
-      const outputSubDir = path.join(outputDir, relativePath);
+      const outputSubDir = path.join(inputDir, relativePath);
       if (!fs.existsSync(outputSubDir)) {
         fs.mkdirSync(outputSubDir, { recursive: true });
       }
       outPath = path.join(outputSubDir, `${base}.mp4`);
     } else {
-      outPath = path.join(outputDir, `${base}.mp4`);
+      outPath = path.join(inputDir, `${base}.mp4`);
     }
 
     // Check if output file already exists
@@ -228,48 +211,31 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals, fi
       continue;
     }
 
+    log(`(${fileCount}/${totalFiles}) Processing file: ${inPath}`, true);
     try {
-      if (ext === '.mov' && VIDEO_FILE_EXTENSIONS.includes('.mov')) {
-        // Normalize ALL .mov → H.264 MP4
-        log(`(${fileCount}/${totalFiles}) Converting MOV to MP4: ${name}`, true);
-        await convertToH264Mp4(inPath, outPath, deleteOriginals);
-        continue;
-      }
-
-      if (ext === '.mp4' && VIDEO_FILE_EXTENSIONS.includes('.mp4')) {
-        // If it's already an MP4, inspect codec. If H.264 — copy (rename) into output dir.
+      // Special case: MP4 files that are already H.264 can just be copied
+      if (ext === '.mp4') {
         const codec = getVideoCodec(inPath);
-        if (!codec) {
-          log(`(${fileCount}/${totalFiles}) Could not determine codec for ${name}; converting to be safe.`, true);
-          await convertToH264Mp4(inPath, outPath, deleteOriginals);
-          continue;
-        }
-
         if (codec === 'h264') {
-          log(`(${fileCount}/${totalFiles}) Already H.264 MP4 — copying to output: ${name}`, true);
+          log(`Already H.264 MP4 — moving to output: ${name}`, true);
           try {
-            fs.copyFileSync(inPath, outPath);
-            log(`Copied: ${outPath}`, true);
+            // Move preserves all timestamps including creation time
+            fs.renameSync(inPath, outPath);
           } catch (err) {
-            log(`Failed to copy ${inPath} -> ${outPath}: ${err.message}`, true);
+            log(`Failed to move ${inPath} -> ${outPath}: ${err.message}`, true);
           }
           continue;
         }
-
-        // Any other codec in an MP4 container — re-encode to H.264
-        log(`(${fileCount}/${totalFiles}) Converting MP4 (${codec}) -> H.264 MP4: ${name}`, true);
-        await convertToH264Mp4(inPath, outPath, deleteOriginals);
-        continue;
+        // If codec couldn't be determined or is not h264, fall through to convert
+        log(`Converting MP4 (${codec || 'unknown codec'}) -> H.264 MP4: ${name}`, true);
+      } else {
+        log(`Converting file to MP4: ${name}`, true);
       }
-
-      if (VIDEO_FILE_EXTENSIONS.includes(ext)) {
-        // Non-MOV, non-MP4 files: attempt conversion to .mp4
-        log(`(${fileCount}/${totalFiles}) Converting file to MP4: ${name}`, true);
-        await convertToH264Mp4(inPath, outPath, deleteOriginals);
-        continue;
-      }
+      
+      // Convert all non-h264 files
+      await convertToH264Mp4(inPath, outPath, deleteOriginals);
     } catch (err) {
-      log(`Error processing ${name}: ${err.message}`, true);
+      log(`Error converting file to MP4: ${name}: ${err.message}`, true);
       // Remove the failed output file if it was created
       if (fs.existsSync(outPath)) {
         try {

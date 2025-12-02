@@ -60,7 +60,7 @@ async function checkAndCovertVideoFiles() {
     log(`Found ${videoFiles.length} video file(s) to process.`, true);
     
     // Convert with recursive file list
-    await convertVideoFiles(srcPath, srcPath, deleteOriginals, videoFiles, stopOnError);
+    await convertVideoFiles(srcPath, deleteOriginals, videoFiles, stopOnError);
     log('Video conversion completed successfully.', true);
     return true;
   } catch (err) {

@@ -17,6 +17,7 @@ export function getLogFileName() {
 export function initializeLogger() {
   LOG_FILE = getLogFileName();
   validatePath(LOG_FOLDER, 'log', true);
+  log('Logging to file: ' + LOG_FILE, true);
 }
 
 export async function log(message, persistToFile = true) {

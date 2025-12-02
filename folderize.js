@@ -132,7 +132,11 @@ async function checkAndCovertVideoFiles() {
   try {
     log('Starting video conversion step...', true);
     checkFfmpegInstalled();
-    await convertVideoFiles(srcPath, srcPath, deleteOriginals); // convert in place, delete originals
+
+    // Get recursive list of video files using shared utility
+    const videoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES);
+
+    await convertVideoFiles(srcPath, deleteOriginals, videoFiles);
     log('Video conversion completed successfully.', true);
     return true;
   } catch (err) {
