@@ -81,7 +81,8 @@ export async function getExtendedFile(file) {
 };
 
 // Get files from a path, optionally filtered by extensions
-export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
+// Set includeExtendedInfo to false for a lightweight file list (skips EXIF parsing)
+export async function getFiles(srcPath, extensions = null, ignoredFiles = [], includeExtendedInfo = true) {
   const {globby} = await import('globby');
   
   let files;
@@ -101,7 +102,7 @@ export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
     }
     
     files = await globby(patterns, {
-      stats: true,
+      stats: true, // only fetch stats when needed
       checkCwdOption: false,
       ignore: ['**/node_modules/**'],
       caseSensitiveMatch: false
@@ -111,24 +112,26 @@ export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
     process.exit(1);
   }
 
-  files.length && log('Getting files info...', true);
-  for(let i=0; i<files.length; i++) {
-    log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, true);
-    files[i] = await getExtendedFile(files[i]);
+  // When extended info is requested, parse EXIF data for each file
+  if (includeExtendedInfo) {
+    files.length && log('Getting files info...', true);
+    for (let i = 0; i < files.length; i++) {
+      log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, true);
+      files[i] = await getExtendedFile(files[i]);
+    }
   }
 
-  const filesForProcessing = files.map(file => {
-    const filingDate = new Date(file.filingCreatedDate);
-    return {
-      name: file.name,
-      srcFilePath: file.path,
-      stats: file.stats,
-      filingCreatedDate: filingDate,
-      exifData: file.exifData,
-      filingDateSrc: file.filingDateSrc
-    };
-  }).filter(file => ignoredFiles.includes(file.name) === false);
-
+  const filesForProcessing = files.map(file => ({
+    name: file.name,
+    srcFilePath: file.path,
+    stats: file.stats,
+    filingCreatedDate: new Date(file.filingCreatedDate ?? file.stats.birthtime),
+    filingDateSrc: file.filingDateSrc ?? 'file.createdAt',
+    exifData: file.exifData ?? null
+  })).filter(
+    file => !ignoredFiles.includes(file.name)
+  );
+  
   return filesForProcessing;
 }
 

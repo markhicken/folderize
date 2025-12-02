@@ -10,7 +10,8 @@ import { log, initializeLogger } from './logger.js';
 import { cleanEmptyFoldersRecursively, validatePath, getFiles, isFileStable } from './utils.js';
 import { ALLOWED_FILE_EXTENSIONS, VIDEO_FILE_EXTENSIONS, IGNORED_FILES } from './config.js';
 
-const CONTINUOUS_INTERVAL = 1000 * 60 * 60; // minutes
+// const CONTINUOUS_INTERVAL = (1000 * 60) * 60; // minutes
+const CONTINUOUS_INTERVAL = (1000 * 60) * 60; // minutes
 
 // Parse command-line arguments with yargs
 const argv = await yargs(hideBin(process.argv))
@@ -124,10 +125,10 @@ async function moveFiles(_srcPath, _dstPath) {
 
 function verifyAllVideosConverted(videoFiles) {
   const unconverted = videoFiles.filter(file => {
-    const ext = path.extname(file.srcFilePath).toLowerCase();
+    const ext = path.extname(file.srcFilePath);
     
     // .mp4 files are considered already converted
-    if (ext === '.mp4') {
+    if (ext.toLowerCase() === '.mp4') {
       return false;
     }
     
@@ -153,8 +154,8 @@ async function checkAndCovertVideoFiles() {
     log('Starting video conversion step...', true);
     checkFfmpegInstalled();
 
-    // Get recursive list of video files using shared utility
-    const videoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES);
+    // Get recursive list of video files using shared utility (no extended info needed for conversion)
+    const videoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES, false);
 
     await convertVideoFiles(srcPath, deleteOriginals, videoFiles);
     log('Video conversion completed successfully.', true);
@@ -162,8 +163,8 @@ async function checkAndCovertVideoFiles() {
     // Verify all videos are converted before proceeding
     log('Verifying all video files have been converted...', true);
     
-    // Get fresh list of video files
-    const remainingVideoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES);
+    // Get fresh list of video files (no extended info needed for verification)
+    const remainingVideoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES, false);
     
     // Check for unstable files (actively being uploaded/modified)
     const unstableFiles = remainingVideoFiles.filter(file => !isFileStable(file.srcFilePath));
@@ -178,15 +179,15 @@ async function checkAndCovertVideoFiles() {
     // Verify all stable videos are converted
     if (!verifyAllVideosConverted(remainingVideoFiles)) {
       const unconverted = remainingVideoFiles.filter(file => {
-        const ext = path.extname(file.srcFilePath).toLowerCase();
-        if (ext === '.mp4') return false;
+        const ext = path.extname(file.srcFilePath);
+        if (ext.toLowerCase() === '.mp4') return false;
         const baseName = path.basename(file.srcFilePath, ext);
         const dir = path.dirname(file.srcFilePath);
         const mp4Path = path.join(dir, `${baseName}.mp4`);
         return !fs.existsSync(mp4Path);
       });
       
-      log(`Found ${unconverted.length} unconverted video file(s). Waiting for next check...`, true);
+      log(`Found ${unconverted.length} unconverted video file(s).`, true);
       unconverted.forEach(file => {
         log(`  - ${file.srcFilePath}`, true);
       });
@@ -204,6 +205,7 @@ async function checkAndCovertVideoFiles() {
 let checkCount = 0;
 async function checkAndFolderize() {
   checkCount++;
+  let shouldMoveFiles = true;
 
   // periodically log the source and destination paths
   if (checkCount % 10 === 0) {
@@ -213,12 +215,14 @@ async function checkAndFolderize() {
   // check and convert video files
   const videosConverted = await checkAndCovertVideoFiles();
   if (!videosConverted) {
-    log('Skipping file folderization due to video conversion failure.', true);
-    return;
+    log('Skipping file folderization due to incomplete video conversion.', true);
+    shouldMoveFiles = false;
   }
 
-  await log('Checking for files to folderize...', true);
-  await moveFiles(srcPath, dstPath);
+  if (shouldMoveFiles) {
+    await log('Checking for files to folderize...', true);
+    await moveFiles(srcPath, dstPath);
+  }
   if (continuous) {
     log(`Waiting ${CONTINUOUS_INTERVAL/1000/60} minutes to check for more files.`, true);
   }
@@ -254,10 +258,12 @@ async function checkAndFolderize() {
   await checkAndFolderize();
 
   if (continuous) {
-    // Set up periodic runs
-    setInterval(async() => {
+    // Set up periodic runs using recursive setTimeout to ensure sequential execution
+    const runContinuously = async () => {
       await checkAndFolderize();
-    }, CONTINUOUS_INTERVAL);
+      setTimeout(runContinuously, CONTINUOUS_INTERVAL);
+    };
+    setTimeout(runContinuously, CONTINUOUS_INTERVAL);
   } else {
     // clean up after single runs
     try {
