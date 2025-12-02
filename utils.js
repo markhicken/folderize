@@ -5,7 +5,7 @@ import { log } from './logger.js';
 
 export function validatePath(pathArg, pathName, shouldCreate) {
   if (!pathArg) {
-    log(`Please provide a ${pathName} path`);
+    log(`Please provide a ${pathName} path`, true);
     process.exit(1);
   } else {
     let resolvedPath = path.resolve(pathArg);
@@ -21,7 +21,7 @@ export function validatePath(pathArg, pathName, shouldCreate) {
           process.exit(1);
         }
       } else {
-        log(`${pathName} path "${resolvedPath}" does not exist.`);
+        log(`${pathName} path "${resolvedPath}" does not exist.`, true);
         process.exit(1);
       }
     }
@@ -32,6 +32,8 @@ export function cleanEmptyFoldersRecursively(folder, isSubFolder = false) {
   if (!fs.statSync(folder).isDirectory()) {
     return;
   }
+
+  log('Checking for empty folders...', true);
 
   let files = fs.readdirSync(folder);
   if (files.length > 0) {
@@ -48,7 +50,7 @@ export function cleanEmptyFoldersRecursively(folder, isSubFolder = false) {
   }
 
   if (files.length === 0 && isSubFolder) {
-    log('Removing: ', folder);
+    log('Removing empty folder: ' + folder, true);
     fs.rmdirSync(folder);
     return;
   }
@@ -105,13 +107,13 @@ export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
       caseSensitiveMatch: false
     });
   } catch (error) {
-    log(`Error getting files: ${error.message}`);
+    log(`Error getting files: ${error.message}`, true);
     process.exit(1);
   }
 
-  files.length && log('Getting files info...');
+  files.length && log('Getting files info...', true);
   for(let i=0; i<files.length; i++) {
-    log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, false);
+    log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, true);
     files[i] = await getExtendedFile(files[i]);
   }
 

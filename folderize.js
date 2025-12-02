@@ -79,7 +79,7 @@ async function moveFiles(_srcPath, _dstPath) {
     };
   });
 
-  files.length && log('Moving files...');
+  files.length && log('Moving files...', true);
   filesForFiling.forEach((file, index) => {
     // check if folder exists
     if(!fs.existsSync(file.dstPath)) {
@@ -87,7 +87,7 @@ async function moveFiles(_srcPath, _dstPath) {
         fs.mkdirSync(file.dstPath, { recursive: true });
       }
       catch(error) {
-        log(`Error creating "${file.dstPath}" - ` + error.message);
+        log(`Error creating "${file.dstPath}" - ` + error.message, true);
       }
     }
 
@@ -117,7 +117,7 @@ async function moveFiles(_srcPath, _dstPath) {
       fs.unlinkSync(file.srcFilePath);
       log(`(${index+1}/${filesForFiling.length}) Moved "${file.srcFilePath}" to "${file.dstFilePath}"`);
     } catch (error) {
-      log(`(${index+1}/${filesForFiling.length}) Error moving "${file.srcFilePath}" to "${file.dstFilePath}" - ` + error.message);
+      log(`(${index+1}/${filesForFiling.length}) Error moving "${file.srcFilePath}" to "${file.dstFilePath}" - ` + error.message, true);
     }
   });
 }
@@ -153,14 +153,14 @@ async function checkAndFolderize() {
   // check and convert video files
   const videosConverted = await checkAndCovertVideoFiles();
   if (!videosConverted) {
-    log('Skipping file folderization due to video conversion failure.', false);
+    log('Skipping file folderization due to video conversion failure.', true);
     return;
   }
 
-  await log('Checking for files to folderize...');
+  await log('Checking for files to folderize...', true);
   await moveFiles(srcPath, dstPath);
   if (continuous) {
-    log(`Waiting ${CONTINUOUS_INTERVAL/1000/60} minutes to check for more files.`)
+    log(`Waiting ${CONTINUOUS_INTERVAL/1000/60} minutes to check for more files.`, true);
   }
 }
 
@@ -172,7 +172,7 @@ async function checkAndFolderize() {
   });
 
   initializeLogger();
-  continuous && await log('Folderize started.');
+  continuous && await log('Folderize started.', true);
   validatePath(srcPath, 'Source');
   validatePath(dstPath, 'Destination');
 
