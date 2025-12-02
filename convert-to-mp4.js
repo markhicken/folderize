@@ -270,6 +270,15 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals, fi
       }
     } catch (err) {
       log(`Error processing ${name}: ${err.message}`, true);
+      // Remove the failed output file if it was created
+      if (fs.existsSync(outPath)) {
+        try {
+          fs.unlinkSync(outPath);
+          log(`Removed failed conversion file: ${path.basename(outPath)}`, true);
+        } catch (unlinkErr) {
+          log(`Warning: Could not remove failed file ${path.basename(outPath)}: ${unlinkErr.message}`, true);
+        }
+      }
       if (stopOnError) {
         throw err;
       }

@@ -6,6 +6,9 @@ export const IGNORED_FILES = [
 
 export const VIDEO_FILE_EXTENSIONS = [
   '.mov', 
+  '.mp2', 
+  '.mpg', 
+  '.mpeg', 
   '.mp4', 
   '.m4v', 
   '.avi', 
