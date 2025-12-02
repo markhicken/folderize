@@ -131,3 +131,9 @@ export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
 
   return filesForProcessing;
 }
+
+export function isFileStable(filePath, maxAgeSeconds = 5) {
+  const stats = fs.statSync(filePath);
+  const ageSeconds = (Date.now() - stats.mtimeMs) / 1000;
+  return ageSeconds >= maxAgeSeconds;
+}

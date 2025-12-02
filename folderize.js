@@ -7,7 +7,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { convertVideoFiles, checkFfmpegInstalled } from './convert-to-mp4.js';
 import { log, initializeLogger } from './logger.js';
-import { cleanEmptyFoldersRecursively, validatePath, getFiles } from './utils.js';
+import { cleanEmptyFoldersRecursively, validatePath, getFiles, isFileStable } from './utils.js';
 import { ALLOWED_FILE_EXTENSIONS, VIDEO_FILE_EXTENSIONS, IGNORED_FILES } from './config.js';
 
 const CONTINUOUS_INTERVAL = 1000 * 60 * 60; // minutes
@@ -122,6 +122,26 @@ async function moveFiles(_srcPath, _dstPath) {
   });
 }
 
+function verifyAllVideosConverted(videoFiles) {
+  const unconverted = videoFiles.filter(file => {
+    const ext = path.extname(file.srcFilePath).toLowerCase();
+    
+    // .mp4 files are considered already converted
+    if (ext === '.mp4') {
+      return false;
+    }
+    
+    // Check if corresponding .mp4 exists
+    const baseName = path.basename(file.srcFilePath, ext);
+    const dir = path.dirname(file.srcFilePath);
+    const mp4Path = path.join(dir, `${baseName}.mp4`);
+    
+    return !fs.existsSync(mp4Path);
+  });
+  
+  return unconverted.length === 0;
+}
+
 async function checkAndCovertVideoFiles() {
   // Convert video files in the source folder using the imported converter.
   if (!videoConversionEnabled) {
@@ -138,6 +158,42 @@ async function checkAndCovertVideoFiles() {
 
     await convertVideoFiles(srcPath, deleteOriginals, videoFiles);
     log('Video conversion completed successfully.', true);
+    
+    // Verify all videos are converted before proceeding
+    log('Verifying all video files have been converted...', true);
+    
+    // Get fresh list of video files
+    const remainingVideoFiles = await getFiles(srcPath, VIDEO_FILE_EXTENSIONS, IGNORED_FILES);
+    
+    // Check for unstable files (actively being uploaded/modified)
+    const unstableFiles = remainingVideoFiles.filter(file => !isFileStable(file.srcFilePath));
+    if (unstableFiles.length > 0) {
+      log(`Found ${unstableFiles.length} file(s) that are still being modified. Waiting for next check...`, true);
+      unstableFiles.forEach(file => {
+        log(`  - ${file.srcFilePath}`, true);
+      });
+      return false;
+    }
+    
+    // Verify all stable videos are converted
+    if (!verifyAllVideosConverted(remainingVideoFiles)) {
+      const unconverted = remainingVideoFiles.filter(file => {
+        const ext = path.extname(file.srcFilePath).toLowerCase();
+        if (ext === '.mp4') return false;
+        const baseName = path.basename(file.srcFilePath, ext);
+        const dir = path.dirname(file.srcFilePath);
+        const mp4Path = path.join(dir, `${baseName}.mp4`);
+        return !fs.existsSync(mp4Path);
+      });
+      
+      log(`Found ${unconverted.length} unconverted video file(s). Waiting for next check...`, true);
+      unconverted.forEach(file => {
+        log(`  - ${file.srcFilePath}`, true);
+      });
+      return false;
+    }
+    
+    log('All video files have been converted successfully.', true);
     return true;
   } catch (err) {
     log(`Video conversion failed: ${err.message}`, true);
