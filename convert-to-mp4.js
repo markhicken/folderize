@@ -6,7 +6,7 @@ import path from 'path';
 import { execFileSync, spawnSync, spawn } from 'child_process';
 import { utimesSync } from 'utimes';
 import { log } from './logger.js';
-import { VIDEO_FILE_EXTENSIONS } from './folderize.js';
+import { VIDEO_FILE_EXTENSIONS } from './config.js';
 
 export function checkFfmpegInstalled() {
   try {
@@ -156,24 +156,46 @@ export function convertToH264Mp4(inputPath, outputPath, deleteOriginal) {
   });
 }
 
-export async function convertVideoFiles(inputDir, outputDir, deleteOriginals) {
+export async function convertVideoFiles(inputDir, outputDir, deleteOriginals, filesList = null, stopOnError = false) {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const entries = fs.readdirSync(inputDir);
-  const videoEntries = entries.filter(name => {
-    const inPath = path.join(inputDir, name);
-    const stat = fs.statSync(inPath);
-    if (!stat.isFile()) return false;
-    const ext = path.extname(name).toLowerCase();
-    return VIDEO_FILE_EXTENSIONS.includes(ext) || ext === '.mov' || ext === '.mp4';
-  });
-  let fileCount = 0;
-  const totalFiles = videoEntries.length;
+  let videoFiles = [];
+  
+  // If filesList is provided, use it; otherwise fall back to non-recursive directory scan
+  if (filesList && Array.isArray(filesList)) {
+    videoFiles = filesList.map(file => ({
+      inPath: file.srcFilePath || file,
+      name: path.basename(file.srcFilePath || file),
+      dir: path.dirname(file.srcFilePath || file)
+    }));
+  } else {
+    // Legacy non-recursive mode for backward compatibility
+    const entries = fs.readdirSync(inputDir);
+    videoFiles = entries
+      .filter(name => {
+        const inPath = path.join(inputDir, name);
+        const stat = fs.statSync(inPath);
+        if (!stat.isFile()) return false;
+        const ext = path.extname(name).toLowerCase();
+        return VIDEO_FILE_EXTENSIONS.includes(ext) || ext === '.mov' || ext === '.mp4';
+      })
+      .map(name => ({
+        inPath: path.join(inputDir, name),
+        name: name,
+        dir: inputDir
+      }));
+  }
 
-  for (const name of entries) {
-    const inPath = path.join(inputDir, name);
+  let fileCount = 0;
+  const totalFiles = videoFiles.length;
+
+  for (const fileInfo of videoFiles) {
+    const inPath = fileInfo.inPath;
+    const name = fileInfo.name;
+    const fileDir = fileInfo.dir;
+    
     const stat = fs.statSync(inPath);
     if (!stat.isFile()) continue; // skip dirs, symlinks, etc.
 
@@ -186,7 +208,25 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals) {
     // If input is already an H.264 MP4 we'll copy/rename it; otherwise we convert.
 
     const base = path.basename(name, path.extname(name)); // use original case extension for basename
-    const outPath = path.join(outputDir, `${base}.mp4`);
+    
+    // Preserve directory structure relative to inputDir if processing recursively
+    let outPath;
+    if (filesList && Array.isArray(filesList)) {
+      const relativePath = path.relative(inputDir, fileDir);
+      const outputSubDir = path.join(outputDir, relativePath);
+      if (!fs.existsSync(outputSubDir)) {
+        fs.mkdirSync(outputSubDir, { recursive: true });
+      }
+      outPath = path.join(outputSubDir, `${base}.mp4`);
+    } else {
+      outPath = path.join(outputDir, `${base}.mp4`);
+    }
+
+    // Check if output file already exists
+    if (fs.existsSync(outPath)) {
+      log(`(${fileCount}/${totalFiles}) Skipping - already converted: ${name} -> ${path.basename(outPath)}`, true);
+      continue;
+    }
 
     try {
       if (ext === '.mov' && VIDEO_FILE_EXTENSIONS.includes('.mov')) {
@@ -230,7 +270,9 @@ export async function convertVideoFiles(inputDir, outputDir, deleteOriginals) {
       }
     } catch (err) {
       log(`Error processing ${name}: ${err.message}`, true);
-      throw err;
+      if (stopOnError) {
+        throw err;
+      }
     }
   }
 }

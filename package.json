@@ -3,9 +3,10 @@
   "version": "1.0.1",
   "type": "module",
   "description": "Move files into folders based on creation date (EXIF aware)",
-  "main": "folderize.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "folderize": "node folderize.js",
+    "convert-videos": "node convert-videos.js"
   },
   "repository": {
     "type": "git",

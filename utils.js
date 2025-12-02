@@ -77,3 +77,55 @@ export async function getExtendedFile(file) {
     }
   });
 };
+
+// Get files from a path, optionally filtered by extensions
+export async function getFiles(srcPath, extensions = null, ignoredFiles = []) {
+  const {globby} = await import('globby');
+  
+  let files;
+  try {
+    let patterns;
+    
+    if (extensions && extensions.length > 0) {
+      // Build glob patterns for specific extensions
+      // caseSensitiveMatch: false handles mixed case (e.g., .mov, .MOV, .MoV)
+      patterns = extensions.map(ext => `${srcPath}/**/*${ext}`);
+    } else {
+      // Get all files
+      patterns = [
+        `${srcPath}/**/.*`, // include hidden files
+        `${srcPath}/**/*`
+      ];
+    }
+    
+    files = await globby(patterns, {
+      stats: true,
+      checkCwdOption: false,
+      ignore: ['**/node_modules/**'],
+      caseSensitiveMatch: false
+    });
+  } catch (error) {
+    log(`Error getting files: ${error.message}`);
+    process.exit(1);
+  }
+
+  files.length && log('Getting files info...');
+  for(let i=0; i<files.length; i++) {
+    log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, false);
+    files[i] = await getExtendedFile(files[i]);
+  }
+
+  const filesForProcessing = files.map(file => {
+    const filingDate = new Date(file.filingCreatedDate);
+    return {
+      name: file.name,
+      srcFilePath: file.path,
+      stats: file.stats,
+      filingCreatedDate: filingDate,
+      exifData: file.exifData,
+      filingDateSrc: file.filingDateSrc
+    };
+  }).filter(file => ignoredFiles.includes(file.name) === false);
+
+  return filesForProcessing;
+}

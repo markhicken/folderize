@@ -7,15 +7,10 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { convertVideoFiles, checkFfmpegInstalled } from './convert-to-mp4.js';
 import { log, initializeLogger } from './logger.js';
-import { cleanEmptyFoldersRecursively, validatePath, getExtendedFile } from './utils.js';
+import { cleanEmptyFoldersRecursively, validatePath, getFiles } from './utils.js';
+import { ALLOWED_FILE_EXTENSIONS, VIDEO_FILE_EXTENSIONS, IGNORED_FILES } from './config.js';
 
 const CONTINUOUS_INTERVAL = 1000 * 60 * 60; // minutes
-const IGNORED_FILES = ['.DS_Store', 'Thumbs.db'];
-export const VIDEO_FILE_EXTENSIONS = ['.mov', '.mp4', '.m4v', '.avi', '.wmv', '.flv', '.mkv', '.webm'];
-const ALLOWED_FILE_EXTENSIONS = [
-  '.jpg', '.jpeg', '.gif', '.heic', '.raw', '.cr2', '.nef', // '.png', (png tends to be iPhone screenshots and garbage images)
-  ...VIDEO_FILE_EXTENSIONS,
-].map(ext => ext.toLowerCase());
 
 // Parse command-line arguments with yargs
 const argv = await yargs(hideBin(process.argv))
@@ -68,26 +63,8 @@ let deleteOriginals = argv['delete-originals'];
 
 
 async function moveFiles(_srcPath, _dstPath) {
-  // no need to recurse because of globby
-  let files;
-  try {
-    files = await globby([
-      _srcPath + '/**/.*', // include hidden files
-      _srcPath + '/**/*'
-    ], {
-      stats: true,
-      checkCwdOption: false,
-      ignore: ['**/node_modules/**']
-    });
-  } catch (error) {
-    process.exit(error);
-  }
-
-  files.length && log('Getting files info...');
-  for(let i=0; i<files.length; i++) {
-    log(`Getting file info: (${i+1}/${files.length}) ${files[i].path}`, false);
-    files[i] = await getExtendedFile(files[i]);
-  }
+  // Get files using shared utility
+  const files = await getFiles(_srcPath, ALLOWED_FILE_EXTENSIONS, IGNORED_FILES);
 
   const filesForFiling = files.map(file => {
     const filingDate = new Date(file.filingCreatedDate);
@@ -95,12 +72,12 @@ async function moveFiles(_srcPath, _dstPath) {
     const dstFolder = `${_dstPath}/${filingDate.getFullYear()}/${filingDate.getFullYear()}-${month}/`;
     return {
       name: file.name,
-      srcFilePath: file.path,
+      srcFilePath: file.srcFilePath,
       dstPath: dstFolder,
       dstFilePath: dstFolder + file.name,
       stats: file.stats,
     };
-  }).filter(file => IGNORED_FILES.includes(file.name) === false); // filter out ignored files
+  });
 
   files.length && log('Moving files...');
   filesForFiling.forEach((file, index) => {

@@ -42,3 +42,34 @@ node folderize.js ./source ./destination --continuous
 # Continuous mode with video conversion and deleting original videos after conversion is complete
 node folderize.js ./source ./destination --continuous --convert-videos --delete-originals
 ```
+
+...
+
+
+
+
+# Convert Videos
+
+This project also includes a convert-videos.js script for cleaning up old folderized videos that are not already h.264 MP4 videos. 
+
+## Usage
+
+`node convert-videos.js <source> [options]`
+
+### Options
+
+- `--delete-originals`: Delete original video files after conversion (default: false)
+- `--stop-on-error`: Stop processing if a video conversion fails (default: false, continues processing other files)
+
+### Examples
+
+```bash
+# Basic usage - convert videos without deleting originals
+node convert-videos.js ./source
+
+# Convert videos and delete originals after successful conversion
+node convert-videos.js ./source --delete-originals
+
+# Stop processing if any conversion fails (instead of continuing with remaining files)
+node convert-videos.js ./source --stop-on-error
+```
